@@ -1,5 +1,5 @@
 <?php
-function get_db_connection() {
+/*function get_db_connection() {
     $host = 'db'; // The service name from docker-compose.yml
     $dbname = 'mydatabase';
     $user = 'user';
@@ -12,6 +12,34 @@ function get_db_connection() {
     } catch (PDOException $e) {
         error_log("Database connection failed: " . $e->getMessage());
         die("Database connection error. Please check logs.");
+    }
+}*/
+function get_db_connection()
+{
+    $db_url = getenv('DATABASE_URL'); // Render предоставит эту переменную
+    if (empty($db_url)) {
+        // Локальные настройки для Docker
+        $host = 'db';
+        $dbname = 'mydatabase';
+        $user = 'user';
+        $pass = 'password';
+        $dsn = "mysql:host=$host;dbname=$dbname;charset=utf8mb4";
+    } else {
+        // Настройки для PostgreSQL на Render
+        $db_parts = parse_url($db_url);
+        $host = $db_parts['host'];
+        $port = $db_parts['port'];
+        $dbname = ltrim($db_parts['path'], '/');
+        $user = $db_parts['user'];
+        $pass = $db_parts['pass'];
+        $dsn = "pgsql:host=$host;port=$port;dbname=$dbname";
+    }
+    try {
+        $pdo = new PDO($dsn, $user, $pass);
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        return $pdo;
+    } catch (PDOException $e) {
+        die("Database connection error: " . $e->getMessage());
     }
 }
 

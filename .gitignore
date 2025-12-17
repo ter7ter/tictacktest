@@ -1,5 +1,3 @@
-# Файл с секретными данными Telegram
-web/config.php
 
 # Лог-файлы
 web/webhook_log.txt
