@@ -1,9 +1,13 @@
 FROM php:8.2-apache
 
-# Install PDO MySQL extension for database access
-RUN docker-php-ext-install pdo_mysql
+# Устанавливаем расширения для работы с MySQL (для локальной разработки) и PostgreSQL (для Render)
+RUN docker-php-ext-install pdo_mysql pdo_pgsql
 
-# Enable Apache rewrite module for clean URLs (optional but good practice)
+# Включаем модуль Apache для поддержки чистых URL (хорошая практика)
 RUN a2enmod rewrite
 
-# The web root is /var/www/html, which is the default
+# Копируем все файлы из текущей директории (контекста сборки) в рабочую папку Apache внутри контейнера
+COPY . /var/www/html/
+
+# Устанавливаем правильные права на файлы, чтобы Apache мог их читать
+RUN chown -R www-data:www-data /var/www/html
