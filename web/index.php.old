@@ -1,0 +1,213 @@
+<?php
+session_start();
+
+// --- Configurations ---
+$player_marker = '🌸';
+$computer_marker = '🌿';
+
+// --- Telegram Configuration ---
+define('TELEGRAM_BOT_TOKEN', 'YOUR_TELEGRAM_BOT_TOKEN');
+define('TELEGRAM_CHAT_ID', 'YOUR_TELEGRAM_CHAT_ID');
+
+
+// --- Game State & User Handling ---
+
+// Handle username submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['telegram_username'])) {
+    $username = trim(htmlspecialchars($_POST['telegram_username']));
+    if (strpos($username, '@') === 0) {
+        $username = substr($username, 1);
+    }
+    if (!empty($username)) {
+        $_SESSION['telegram_username'] = $username;
+        new_game(); // Start a fresh game for the new user
+        header('Location: ' . strtok($_SERVER["REQUEST_URI"], '?'));
+        exit;
+    }
+}
+
+// Handle user change request
+if (isset($_GET['new_user'])) {
+    session_destroy();
+    header('Location: ' . strtok($_SERVER["REQUEST_URI"], '?'));
+    exit;
+}
+
+
+// --- Game Functions ---
+
+function send_telegram_message($message) {
+    if (TELEGRAM_BOT_TOKEN === 'YOUR_TELEGRAM_BOT_TOKEN' || TELEGRAM_CHAT_ID === 'YOUR_TELEGRAM_CHAT_ID') {
+        error_log("Telegram credentials are not set. Message not sent: $message");
+        return;
+    }
+    $url = "https://api.telegram.org/bot" . TELEGRAM_BOT_TOKEN . "/sendMessage";
+    $data = ['chat_id' => TELEGRAM_CHAT_ID, 'text' => $message];
+    $options = ['http' => ['header'  => "Content-type: application/x-www-form-urlencoded\r\n", 'method'  => 'POST', 'content' => http_build_query($data)]];
+    $context = stream_context_create($options);
+    @file_get_contents($url, false, $context);
+}
+
+function generate_promocode() { return random_int(10000, 99999); }
+function new_game() {
+    $_SESSION['board'] = array_fill(0, 9, null);
+    $_SESSION['winner'] = null;
+    $_SESSION['promocode'] = null;
+}
+
+function check_winner() {
+    $board = $_SESSION['board'];
+    $winning_combinations = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+    foreach ($winning_combinations as $combination) {
+        if ($board[$combination[0]] !== null && $board[$combination[0]] === $board[$combination[1]] && $board[$combination[1]] === $board[$combination[2]]) {
+            return $board[$combination[0]];
+        }
+    }
+    return in_array(null, $board, true) ? null : 'draw';
+}
+
+function computer_move() {
+    global $player_marker, $computer_marker;
+    $board = $_SESSION['board'];
+    $available_moves = array_keys($board, null, true);
+    if (empty($available_moves) || $_SESSION['winner']) return;
+
+    foreach ($available_moves as $move) {
+        $temp_board = $board; $temp_board[$move] = $computer_marker;
+        if (check_winner_for_board($temp_board) === $computer_marker) { $_SESSION['board'][$move] = $computer_marker; return; }
+    }
+    if ((random_int(1, 100) > 40)) {
+        foreach ($available_moves as $move) {
+            $temp_board = $board; $temp_board[$move] = $player_marker;
+            if (check_winner_for_board($temp_board) === $player_marker) { $_SESSION['board'][$move] = $computer_marker; return; }
+        }
+    }
+    $strategic_moves = [4, 0, 2, 6, 8];
+    foreach ($strategic_moves as $move) {
+        if (in_array($move, $available_moves)) { $_SESSION['board'][$move] = $computer_marker; return; }
+    }
+    $random_move = $available_moves[array_rand($available_moves)];
+    $_SESSION['board'][$random_move] = $computer_marker;
+}
+
+function check_winner_for_board($board) {
+    $winning_combinations = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+    foreach ($winning_combinations as $combination) {
+        if ($board[$combination[0]] !== null && $board[$combination[0]] === $board[$combination[1]] && $board[$combination[1]] === $board[$combination[2]]) {
+            return $board[$combination[0]];
+        }
+    }
+    return null;
+}
+
+// --- Game Logic Flow ---
+
+if (isset($_SESSION['telegram_username'])) {
+    if (isset($_GET['new_game'])) {
+        new_game();
+        header('Location: ' . strtok($_SERVER["REQUEST_URI"], '?'));
+        exit;
+    }
+
+    if (isset($_GET['move']) && $_SESSION['winner'] === null) {
+        $move = (int)$_GET['move'];
+        if ($_SESSION['board'][$move] === null) {
+            $_SESSION['board'][$move] = $player_marker;
+            $winner_after_player = check_winner();
+
+            if ($winner_after_player === null) {
+                computer_move();
+                $_SESSION['winner'] = check_winner();
+                if ($_SESSION['winner'] === $computer_marker) {
+                    $username = $_SESSION['telegram_username'];
+                    send_telegram_message("Проигрыш. Игрок: @$username");
+                }
+            } else {
+                $_SESSION['winner'] = $winner_after_player;
+            }
+            
+            if ($_SESSION['winner'] === $player_marker) {
+                $promocode = generate_promocode();
+                $_SESSION['promocode'] = $promocode;
+                $username = $_SESSION['telegram_username'];
+                send_telegram_message("Победа! Игрок: @$username. Промокод: $promocode");
+            }
+        }
+    }
+
+    $winner = $_SESSION['winner'];
+    $message = '';
+    if ($winner === $player_marker) $message = "Поздравляем, вы победили!";
+    elseif ($winner === $computer_marker) $message = "Компьютер победил. Попробуйте еще раз!";
+    elseif ($winner === 'draw') $message = "Ничья! Сыграем снова?";
+}
+
+?>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Крестики-нолики</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400&family=Playfair+Display:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<?php if (!isset($_SESSION['telegram_username'])): ?>
+    <div class="welcome-container">
+        <form method="POST" action="" class="welcome-form">
+            <h1>Крестики-нолики</h1>
+            <p>Представьтесь, чтобы мы знали, кому достанется приз</p>
+            <label for="telegram_username">Ваш ник в Telegram</label>
+            <input type="text" id="telegram_username" name="telegram_username" placeholder="@ваш_ник" required>
+            <button type="submit">Начать игру</button>
+        </form>
+    </div>
+<?php else: ?>
+    <div class="game-container">
+        <header>
+            <h1>Крестики-нолики</h1>
+            <p>Игрок: <span class="username-display">@<?php echo htmlspecialchars($_SESSION['telegram_username']); ?></span> (<a href="?new_user=1">сменить</a>)</p>
+        </header>
+
+        <div class="board">
+            <?php for ($i = 0; $i < 9; $i++):
+                $cell_content = $_SESSION['board'][$i];
+                $cell_link = '#';
+                if ($cell_content === null && !$winner) {
+                    $cell_link = "?move=$i";
+                }
+            ?>
+                <a href="<?php echo $cell_link; ?>" class="cell">
+                    <?php echo $cell_content ?? ''; // Display empty string if null ?>
+                </a>
+            <?php endfor; ?>
+        </div>
+
+        <?php if ($winner):
+            $result_message = '';
+            if ($winner === $player_marker) $result_message = "Поздравляем, вы победили!";
+            elseif ($winner === $computer_marker) $result_message = "Компьютер победил. Попробуйте еще раз!";
+            elseif ($winner === 'draw') $result_message = "Ничья! Сыграем снова?";
+        ?>
+            <div class="result-message">
+                <p><?php echo $result_message; ?></p>
+                <?php if ($winner === $player_marker && isset($_SESSION['promocode'])): ?>
+                    <p class="promocode">Ваш промокод: <strong><?php echo $_SESSION['promocode']; ?></strong></p>
+                <?php endif; ?>
+                <a href="?new_game=1" class="play-again-button">Сыграть ещё раз</a>
+            </div>
+        <?php else:
+            // Only show reset button if there's no active game or winner
+            if (!isset($_SESSION['board']) || $_SESSION['winner'] === null):
+        ?>
+            <a href="?new_game=1" class="reset-button">Начать заново</a>
+        <?php endif; endif; ?>
+    </div>
+<?php endif; ?>
+
+</body>
+</html>

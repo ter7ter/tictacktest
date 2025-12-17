@@ -1,0 +1,12 @@
+<?php
+// --- TELEGRAM CONFIGURATION EXAMPLE ---
+// Скопируйте этот файл в config.php и вставьте ваши реальные данные
+
+// Токен вашего бота, полученный от @BotFather
+define('TELEGRAM_BOT_TOKEN', 'PASTE_YOUR_TELEGRAM_BOT_TOKEN_HERE');
+
+// Имя вашего бота в Telegram (без символа '@')
+define('TELEGRAM_BOT_NAME', 'PASTE_YOUR_BOT_NAME_HERE');
+
+// (Опционально) ID чата администратора для получения уведомлений, если понадобится в будущем
+// define('TELEGRAM_ADMIN_CHAT_ID', 'PASTE_YOUR_ADMIN_CHAT_ID_HERE');
