@@ -1,45 +1,39 @@
 <?php
-/*function get_db_connection() {
-    $host = 'db'; // The service name from docker-compose.yml
-    $dbname = 'mydatabase';
-    $user = 'user';
-    $pass = 'password';
-
-    try {
-        $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $user, $pass);
-        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        return $pdo;
-    } catch (PDOException $e) {
-        error_log("Database connection failed: " . $e->getMessage());
-        die("Database connection error. Please check logs.");
-    }
-}*/
-function get_db_connection()
-{
-    $db_url = getenv('DATABASE_URL'); // Render предоставит эту переменную
+function get_db_connection() {
+    $db_url = getenv('DATABASE_URL'); 
     if (empty($db_url)) {
-        // Локальные настройки для Docker
-        $host = 'db';
-        $dbname = 'mydatabase';
-        $user = 'user';
+        // --- Локальная разработка в Docker ---
+        $host = 'db'; 
+        $dbname = 'mydatabase'; 
+        $user = 'user'; 
         $pass = 'password';
         $dsn = "mysql:host=$host;dbname=$dbname;charset=utf8mb4";
     } else {
-        // Настройки для PostgreSQL на Render
+        // --- PostgreSQL на Render.com ---
         $db_parts = parse_url($db_url);
-        $host = $db_parts['host'];
-        $port = $db_parts['port'];
-        $dbname = ltrim($db_parts['path'], '/');
-        $user = $db_parts['user'];
-        $pass = $db_parts['pass'];
+
+        // Извлекаем данные для подключения, обрабатывая отсутствующие части
+        $host = $db_parts['host'] ?? null;
+        $user = $db_parts['user'] ?? null;
+        $pass = $db_parts['pass'] ?? null;
+        $dbname = isset($db_parts['path']) ? ltrim($db_parts['path'], '/') : null;
+        $port = $db_parts['port'] ?? 5432; // Используем порт по умолчанию для PostgreSQL, если он не указан
+
+        if (!$host || !$user || !$pass || !$dbname) {
+            die("Неверная переменная окружения DATABASE_URL. Не удалось разобрать данные.");
+        }
+        
         $dsn = "pgsql:host=$host;port=$port;dbname=$dbname";
     }
+    
     try {
         $pdo = new PDO($dsn, $user, $pass);
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         return $pdo;
     } catch (PDOException $e) {
-        die("Database connection error: " . $e->getMessage());
+        // Логируем ошибку, не показывая пароль публично
+        error_log("PDO Connection Error for user " . $user);
+        die("Ошибка подключения к базе данных. Проверьте логи приложения.");
     }
 }
 
@@ -47,13 +41,14 @@ function ensure_table_exists($pdo) {
     // 1. Создаем таблицу, если ее не существует
     $create_sql = "
     CREATE TABLE IF NOT EXISTS telegram_auth (
-        id INT AUTO_INCREMENT PRIMARY KEY,
+        id SERIAL PRIMARY KEY,
         token VARCHAR(32) NOT NULL,
         chat_id BIGINT DEFAULT NULL,
-        status ENUM('pending', 'verified') NOT NULL DEFAULT 'pending',
+        telegram_username VARCHAR(255) DEFAULT NULL,
+        status VARCHAR(10) NOT NULL DEFAULT 'pending',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE KEY (token)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        UNIQUE (token)
+    );
     ";
     try {
         $pdo->exec($create_sql);
@@ -61,22 +56,16 @@ function ensure_table_exists($pdo) {
         die("Table creation failed: " . $e->getMessage());
     }
 
-    // 2. Проверяем, существует ли колонка 'telegram_username'
-    $check_column_sql = "
-    SELECT COUNT(*) 
-    FROM INFORMATION_SCHEMA.COLUMNS 
-    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'telegram_auth' AND COLUMN_NAME = 'telegram_username';
-    ";
-    $stmt = $pdo->query($check_column_sql);
-    $column_exists = $stmt->fetchColumn();
-
-    // 3. Если колонки нет, добавляем ее
-    if ($column_exists == 0) {
-        try {
-            $alter_sql = "ALTER TABLE telegram_auth ADD COLUMN telegram_username VARCHAR(255) DEFAULT NULL AFTER chat_id;";
-            $pdo->exec($alter_sql);
-        } catch (PDOException $e) {
-            die("Failed to alter table: " . $e->getMessage());
+    // 2. Проверяем, существует ли колонка 'telegram_username' (для обратной совместимости)
+    // Для PostgreSQL запрос к information_schema выглядит немного иначе
+    try {
+        $check_column_sql = "SELECT 1 FROM information_schema.columns WHERE table_name='telegram_auth' AND column_name='telegram_username'";
+        $stmt = $pdo->query($check_column_sql);
+        if ($stmt->rowCount() == 0) {
+             $alter_sql = "ALTER TABLE telegram_auth ADD COLUMN telegram_username VARCHAR(255) DEFAULT NULL;";
+             $pdo->exec($alter_sql);
         }
+    } catch (PDOException $e) {
+        // Игнорируем ошибку, если колонка уже существует, но была добавлена в транзакции
     }
 }
