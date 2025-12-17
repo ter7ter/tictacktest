@@ -1,13 +1,20 @@
 FROM php:8.2-apache
 
-# Устанавливаем расширения для работы с MySQL (для локальной разработки) и PostgreSQL (для Render)
-RUN docker-php-ext-install pdo_mysql pdo_pgsql
+# 1. Обновляем список пакетов и устанавливаем системные зависимости
+RUN apt-get update && apt-get install -y \
+    libpq-dev \
+    default-libmysqlclient-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Включаем модуль Apache для поддержки чистых URL (хорошая практика)
+# 2. Устанавливаем расширения, явно указав сначала базовый PDO, а затем драйверы
+RUN docker-php-ext-install pdo pdo_mysql pdo_pgsql
+
+# 3. Включаем модуль Apache
 RUN a2enmod rewrite
 
-# Копируем все файлы из текущей директории (контекста сборки) в рабочую папку Apache внутри контейнера
+# 4. Копируем файлы приложения
 COPY . /var/www/html/
 
-# Устанавливаем правильные права на файлы, чтобы Apache мог их читать
+# 5. Устанавливаем права на файлы
 RUN chown -R www-data:www-data /var/www/html
+
